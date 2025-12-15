@@ -44,6 +44,8 @@ app.post("/generateLessonDraft", async (req, res) => {
       sections // <--- FIX 1: Destructure the 'sections' array from the client
     } = req.body;
 
+// ADD THIS LOGGING LINE:
+    console.log("📝 Received Draft Request:", { curriculum, classLevel, topic, sections: sections.length });
     // The client should send at least one section, so we validate it here.
     if (!sections || !Array.isArray(sections) || sections.length === 0) {
         return res.status(400).json({
