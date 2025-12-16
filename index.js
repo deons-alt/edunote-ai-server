@@ -88,7 +88,7 @@ app.post("/generateLessonDraft", async (req, res) => {
         `;
 
         // 3. Initialize Model (1.5-flash is the stable workhorse)
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         // 4. Call AI with Retry Logic
         const responseText = await generateWithRetry(model, prompt);
