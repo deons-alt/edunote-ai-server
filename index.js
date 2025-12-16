@@ -12,124 +12,82 @@ app.use(express.json());
 const PORT = process.env.PORT || 10000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Safety check
 if (!GEMINI_API_KEY) {
-  console.error("❌ GEMINI_API_KEY missing");
-  process.exit(1);
+    console.error("❌ GEMINI_API_KEY missing");
+    process.exit(1);
 }
 
-// Initialize Gemini client
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-app.get("/", (req, res) => {
-  res.send("✅ EduNote Studio AI Backend Running");
-});
+app.get("/", (req, res) => res.send("✅ EduNote AI Backend Online"));
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "EduNote AI" });
-});
-
-/* --------------------------------------------------
-   Generate Lesson Draft (STRICT – NO GUESSING)
--------------------------------------------------- */
 app.post("/generateLessonDraft", async (req, res) => {
-  try {
-    const {
-      curriculum,
-      classLevel,
-      subject,
-      week,
-      topic,
-      subTopic,
-      sections // <--- FIX 1: Destructure the 'sections' array from the client
-    } = req.body;
+    try {
+        const { curriculum, classLevel, subject, week, topic, subTopic, sections } = req.body;
 
-// ADD THIS LOGGING LINE:
-    // console.log("📝 Received Draft Request:", { curriculum, classLevel, topic, sections: sections.length });
-    console.log("📝 Full Request Body:", req.body);
-    // The client should send at least one section, so we validate it here.
-    if (!sections || !Array.isArray(sections) || sections.length === 0) {
-        return res.status(400).json({
-            error: "Missing required field: sections array must be provided."
+        console.log("📝 Full Request Body Received:", req.body);
+
+        // 1. Validation
+        if (!curriculum || !classLevel || !subject || !topic || !sections) {
+            console.log("⚠️ Validation Failed: Missing fields");
+            return res.status(400).json({ error: "Missing required fields" });
+        }
+
+        // 2. Format Sections for the AI
+        const formattedSections = Array.isArray(sections) 
+            ? sections.map((s, i) => `${i + 1}. ${s.charAt(0).toUpperCase() + s.slice(1)}`).join('\n')
+            : "1. Lesson Objectives\n2. Content\n3. Evaluation";
+
+        const prompt = `
+            You are a professional ${curriculum} curriculum teacher.
+            Create a detailed lesson note for:
+            Class: ${classLevel}
+            Subject: ${subject}
+            Week: ${week || "N/A"}
+            Topic: ${topic}
+            Sub-topic: ${subTopic || "N/A"}
+
+            Strictly include only these sections in this order:
+            ${formattedSections}
+
+            Use clear headings and professional teacher language.
+        `;
+
+        // 3. FIX: Use a valid model name (gemini-1.5-flash)
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        // 4. Set a longer timeout (60 seconds) for AI generation
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+
+        const result = await model.generateContent(
+            {
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
+            },
+            { signal: controller.signal }
+        );
+
+        clearTimeout(timeout);
+        
+        const responseText = result.response.text().trim();
+        console.log("✅ AI Generation Successful");
+
+        res.json({ draft: responseText });
+
+    } catch (error) {
+        console.error("❌ SERVER ERROR:", error.message);
+
+        // Handle specific timeout error
+        if (error.name === "AbortError") {
+            return res.status(504).json({ error: "AI generation timed out. Try again." });
+        }
+
+        // Send a clean JSON error so the Android app doesn't crash during parsing
+        res.status(500).json({ 
+            error: "Internal Server Error", 
+            details: error.message 
         });
     }
-
-    if (!curriculum || !classLevel || !subject || !topic) {
-      return res.status(400).json({
-        error: "Missing required text fields"
-      });
-    }
-
-    // Helper function to format the list of sections for the prompt
-    const formattedSections = sections.map((section, index) => {
-        // Capitalize the first letter for clean formatting
-        const capitalized = section.charAt(0).toUpperCase() + section.slice(1);
-        return `${index + 1}. ${capitalized}`;
-    }).join('\n');
-
-
-    const prompt = `
-You are a professional ${curriculum} curriculum teacher.
-
-Create a WELL-STRUCTURED lesson note using ONLY the data provided below.
-
-Class: ${classLevel}
-Subject: ${subject}
-Week: ${week || "Not specified"}
-Topic: ${topic}
-Subtopic: ${subTopic || "Not specified"}
-
-STRICT RULES:
-- Do NOT guess class level, topic, or curriculum
-- Do NOT add extra topics
-- Use clear headings
-- Keep teacher-friendly language
-
-Include ONLY these sections, in the exact numbered order provided:
-${formattedSections}
-`; // <--- FIX 2: Use the dynamic 'formattedSections' list in the prompt
-
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash"
-    });
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-
-    const result = await model.generateContent(
-      {
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }]
-          }
-        ]
-      },
-      { signal: controller.signal }
-    );
-
-    clearTimeout(timeout);
-
-    const text = result.response.text().trim();
-
-    res.json({ draft: text });
-
-  } catch (error) {
-    console.error("❌ AI Error:", error);
-
-    if (error.name === "AbortError") {
-      return res.status(504).json({
-        error: "AI request timed out. Please try again."
-      });
-    }
-
-    res.status(500).json({
-      error: "Failed to generate lesson draft",
-      details: error.message
-    });
-  }
 });
 
-app.listen(PORT, () =>
-  console.log(`🚀 EduNote AI Server running on port ${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
