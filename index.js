@@ -25,18 +25,17 @@ app.post("/generateLessonDraft", async (req, res) => {
     try {
         const { curriculum, classLevel, subject, week, topic, subTopic, sections } = req.body;
 
-        console.log("📝 Full Request Body Received:", req.body);
+        console.log("📝 Processing request for topic:", topic);
 
-        // 1. Validation
+        // Validation
         if (!curriculum || !classLevel || !subject || !topic || !sections) {
-            console.log("⚠️ Validation Failed: Missing fields");
             return res.status(400).json({ error: "Missing required fields" });
         }
 
-        // 2. Format Sections for the AI
+        // Format sections list for the prompt
         const formattedSections = Array.isArray(sections) 
-            ? sections.map((s, i) => `${i + 1}. ${s.charAt(0).toUpperCase() + s.slice(1)}`).join('\n')
-            : "1. Lesson Objectives\n2. Content\n3. Evaluation";
+            ? sections.map((s, i) => `${i + 1}. ${s.toUpperCase()}`).join('\n')
+            : "1. OBJECTIVES\n2. CONTENT\n3. EVALUATION";
 
         const prompt = `
             You are a professional ${curriculum} curriculum teacher.
@@ -50,41 +49,22 @@ app.post("/generateLessonDraft", async (req, res) => {
             Strictly include only these sections in this order:
             ${formattedSections}
 
-            Use clear headings and professional teacher language.
+            Format the output with clear headings.
         `;
 
-        // 3. FIX: Use a valid model name (gemini-1.5-flash)
+        // Using the correct model name: gemini-1.5-flash
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-        // 4. Set a longer timeout (60 seconds) for AI generation
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000);
-
-        const result = await model.generateContent(
-            {
-                contents: [{ role: "user", parts: [{ text: prompt }] }]
-            },
-            { signal: controller.signal }
-        );
-
-        clearTimeout(timeout);
-        
+        const result = await model.generateContent(prompt);
         const responseText = result.response.text().trim();
-        console.log("✅ AI Generation Successful");
 
+        console.log("✅ AI Generation Successful");
         res.json({ draft: responseText });
 
     } catch (error) {
         console.error("❌ SERVER ERROR:", error.message);
-
-        // Handle specific timeout error
-        if (error.name === "AbortError") {
-            return res.status(504).json({ error: "AI generation timed out. Try again." });
-        }
-
-        // Send a clean JSON error so the Android app doesn't crash during parsing
         res.status(500).json({ 
-            error: "Internal Server Error", 
+            error: "AI Generation Failed", 
             details: error.message 
         });
     }
